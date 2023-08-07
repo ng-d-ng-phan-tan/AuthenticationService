@@ -15,6 +15,9 @@ use App\Http\Controllers\AuthController;
 |
 */
 Route::post('/register', [AuthController::class, 'register']);
+Route::get('/activateAccount', [AuthController::class, 'activateAccount']);
+Route::get('/registResetPassword', [AuthController::class, 'registResetPassword']);
+Route::post('/resetPassword', [AuthController::class, 'resetPassword']);
 Route::post('/changePassword', [AuthController::class, 'changePassword']);
 Route::post('/login', [AuthController::class, 'login'])->withoutMiddleware(['jwt.verify']);
 Route::get('/logout', [AuthController::class, 'logout']);

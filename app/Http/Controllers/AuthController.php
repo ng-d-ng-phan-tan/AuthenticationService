@@ -11,13 +11,28 @@ use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Str;
 use Tymon\JWTAuth\Exceptions\JWTException;
+use GuzzleHttp\Client;
 
 class AuthController extends Controller
 {
+    public function sendHttpRequest($url, $type, $data){
+        $client = new Client();
+        $response = null;
+        if($type == 'get'){
+            $response = $client->get($url);
+        }
+        else{
+            $response = $client->post($url, [
+                'json' => $data,
+            ]);
+        }
+        return json_decode($response->getBody()->getContents());
+    }
+
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
+            'name' => 'string|max:255',
             'email' => 'required|string|email|unique:usrs',
             'password' => 'required|string|min:8',
             'role' => 'required|string',
@@ -30,15 +45,40 @@ class AuthController extends Controller
 
         $user = new usr([
             'user_id' => Uuid::uuid4()->toString(),
-            'name' => $request->name,
+            'name' => $request->name ? $request->name:$request->email,
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'role' => $request->role,
         ]);
 
         if($user->save()){
-            $response = new ResponseMsg(200, 'Register success', null);
-            return response()->json($response);
+            $res = $this->sendHttpRequest('http://127.0.0.3:8080/api/crud/add', 'post', $user);
+            $status = $res->status;
+            if($status == '201'){
+                $rdStr = $this->genRandomStr(18);
+                $user->update(['validate_email_str' => $rdStr]);
+                $data = [
+                    "to" => $user->email,
+                    "subject" => "Activate Account",
+                    "data" => [
+                        "link" => "http://localhost:4200/auth/activate?email={$user->email}&activate={$rdStr}",
+                        "useremail" => $user->email
+                    ],
+                    "template" => "activate_account"
+                ];
+                $res2 = $this->sendHttpRequest(env('SERVICE_NOTI_SENDMAIL_URL'),'post',$data);
+                $status2 = $res2->status;
+                if($status2 == '200'){
+                    $response = new ResponseMsg(200, 'Register success, please check your mail to proceed activate your account', null);
+                    return response()->json($response);
+                }
+                $response = new ResponseMsg(200, 'Register success, but the activation email failed to send to your email', null);
+                return response()->json($response);
+            }
+            else{
+                $response = new ResponseMsg(400, 'Register failed', null);
+                return response()->json($response);
+            }
         }
         else{
             $response = new ResponseMsg(400, 'Register failed', null);
@@ -106,6 +146,97 @@ class AuthController extends Controller
         }
     }
 
+    public function genRandomStr($len) {
+        $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        $charLen = strlen($characters);
+        $randomStr = '';
+        for ($i = 0; $i < $len; $i++) {
+            $randomStr .= $characters[rand(0, $charLen - 1)];
+        }
+        return $randomStr;
+    }
+
+    public function registResetPassword(Request $request){
+        $email = $request->input('email');
+        $user = usr::where('email', $email)->first();
+        if($user){
+            $resetPswStr = $this->genRandomStr(12);
+            try{
+                $user->update(['reset_password_str' => $resetPswStr]);
+                $data = [
+                    "to" => $user->email,
+                    "subject" => "Reset Password",
+                    "data" => [
+                        "otp" => $resetPswStr,
+                        "link" => env('BASE_URL_AUTH_FE') . "/auth/resetpassword",
+                        "useremail" => $user->email
+                    ],
+                    "template" => "reset_password"
+                ];
+                $res2 = $this->sendHttpRequest(env('SERVICE_NOTI_SENDMAIL_URL'),'post',$data);
+            }
+            catch (\Illuminate\Database\QueryException $e){
+                $response = new ResponseMsg(200, 'aaa', $user);
+                return response()->json($response);
+            }
+            $response = new ResponseMsg(200, 'Reset password OTP and instructions has been sent to your email', $user);
+            return response()->json($response);
+        }
+        $response = new ResponseMsg(400, 'Request failed, invalid email', null);
+        return response()->json($response);
+    }
+
+    public function registActivateEmail($user){
+        $activateStr = $this->genRandomStr(16);
+        $user->update(['validate_email_str' => $activateStr]);
+        return true;
+    }
+
+    public function activateAccount(Request $request){
+        // $request->validate([
+        //     'email' => 'required|string|email',
+        //     'activateStr' => 'required|string',
+        // ]);
+
+        $email = $request->query('email');
+        $activateStr = $request->query('activate');
+        $user = usr::where('email', $email)
+        ->where('validate_email_str', $activateStr)
+        ->first();
+
+        if($user){
+            $user->update(['validate_email_str' => null,
+                           'is_validate' => true]);
+            $response = new ResponseMsg(200, 'Validate email success', null);
+            return response()->json($response);
+        }
+        $response = new ResponseMsg(400, 'Validate email failed, invalid input', $email);
+        return response()->json($response);
+    }
+
+    public function resetPassword(Request $request){
+        $request->validate([
+            'email' => 'required|string|email',
+            'resetPasswordStr' => 'required|string',
+            'passwordReset' => 'required|string|min:8',
+        ]);
+
+        $user = usr::where('email', $request->email)->first();
+
+        if ($user) {
+            if ($request->resetPasswordStr == $user->reset_password_str) {
+                $user->update([
+                    'password' => Hash::make($request->passwordReset),
+                    'reset_password_str' => null
+                ]);
+                $response = new ResponseMsg(200, 'Password reset successfully', null);
+                return response()->json($response);
+            }
+        }
+        $response = new ResponseMsg(400, 'Password reset failed, invalid reset password string or invalid email', null);
+        return response()->json($response);
+    }
+
     public function changePassword(Request $request)
     {
         $request->validate([
@@ -167,7 +298,7 @@ class AuthController extends Controller
     public function checkUserInRole(Request $request){
         $user = $request->user();
         $role = strtolower($request->query('role'));
-        $response = new ResponseMsg(200, $user->role == $role? 'User role is valid':'User role is invalid', null);
+        $response = new ResponseMsg(200, $user->role == $role? 'Yes':'No', null);
         return response()->json($response);
     }
 

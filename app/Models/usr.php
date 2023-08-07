@@ -21,6 +21,9 @@ class usr extends Model implements AuthAuthenticatable, JWTSubject
         'email',
         'password',
         'role',
+        'reset_password_str',
+        'validate_email_str',
+        'is_validate'
     ];
 
     public function getAuthIdentifierName()
