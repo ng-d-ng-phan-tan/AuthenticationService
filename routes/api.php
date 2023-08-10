@@ -14,6 +14,12 @@ use App\Http\Controllers\AuthController;
 | be assigned to the "api" middleware group. Make something great!
 |
 */
+
+
+Route::get('/test', function () {
+    return "Auth OK";
+});
+Route::post('/reGenAccessToken', [AuthController::class, 'reGenAccessToken']);
 Route::post('/register', [AuthController::class, 'register']);
 Route::get('/activateAccount', [AuthController::class, 'activateAccount']);
 Route::get('/registResetPassword', [AuthController::class, 'registResetPassword']);

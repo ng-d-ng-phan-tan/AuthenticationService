@@ -12,16 +12,17 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Str;
 use Tymon\JWTAuth\Exceptions\JWTException;
 use GuzzleHttp\Client;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
-    public function sendHttpRequest($url, $type, $data){
+    public function sendHttpRequest($url, $type, $data)
+    {
         $client = new Client();
         $response = null;
-        if($type == 'get'){
+        if ($type == 'get') {
             $response = $client->get($url);
-        }
-        else{
+        } else {
             $response = $client->post($url, [
                 'json' => $data,
             ]);
@@ -45,16 +46,16 @@ class AuthController extends Controller
 
         $user = new usr([
             'user_id' => Uuid::uuid4()->toString(),
-            'name' => $request->name ? $request->name:$request->email,
+            'name' => $request->name ? $request->name : $request->email,
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'role' => $request->role,
         ]);
 
-        if($user->save()){
-            $res = $this->sendHttpRequest('http://127.0.0.3:8080/api/crud/add', 'post', $user);
+        if ($user->save()) {
+            $res = $this->sendHttpRequest(env('SERVICE_USER_URL') . '/add', 'post', $user);
             $status = $res->status;
-            if($status == '201'){
+            if ($status == '201') {
                 $rdStr = $this->genRandomStr(18);
                 $user->update(['validate_email_str' => $rdStr]);
                 $data = [
@@ -66,60 +67,59 @@ class AuthController extends Controller
                     ],
                     "template" => "activate_account"
                 ];
-                $res2 = $this->sendHttpRequest(env('SERVICE_NOTI_SENDMAIL_URL'),'post',$data);
+                $res2 = $this->sendHttpRequest(env('SERVICE_NOTI_SENDMAIL_URL'), 'post', $data);
                 $status2 = $res2->status;
-                if($status2 == '200'){
+                if ($status2 == '200') {
                     $response = new ResponseMsg(200, 'Register success, please check your mail to proceed activate your account', null);
                     return response()->json($response);
                 }
                 $response = new ResponseMsg(200, 'Register success, but the activation email failed to send to your email', null);
                 return response()->json($response);
-            }
-            else{
+            } else {
                 $response = new ResponseMsg(400, 'Register failed', null);
                 return response()->json($response);
             }
-        }
-        else{
+        } else {
             $response = new ResponseMsg(400, 'Register failed', null);
             return response()->json($response);
         }
 
-            // if ($validator->fails()) {
-            //     $errors = $validator->errors();
+        // if ($validator->fails()) {
+        //     $errors = $validator->errors();
 
-            //     if ($errors->has('name')) {
-            //         $nameError = $errors->first('name');
-            //         return response()->json(['error' => $nameError], 400);
-            //     }
+        //     if ($errors->has('name')) {
+        //         $nameError = $errors->first('name');
+        //         return response()->json(['error' => $nameError], 400);
+        //     }
 
-            //     if ($errors->has('email')) {
-            //         $emailError = $errors->first('email');
-            //         return response()->json(['error' => $emailError], 400);
-            //     }
+        //     if ($errors->has('email')) {
+        //         $emailError = $errors->first('email');
+        //         return response()->json(['error' => $emailError], 400);
+        //     }
 
-            //     if ($errors->has('password')) {
-            //         $passwordError = $errors->first('password');
-            //         return response()->json(['error' => $passwordError], 400);
-            //     }
+        //     if ($errors->has('password')) {
+        //         $passwordError = $errors->first('password');
+        //         return response()->json(['error' => $passwordError], 400);
+        //     }
 
-            //     if ($errors->has('role')) {
-            //         $roleError = $errors->first('role');
-            //     }
-            // }
+        //     if ($errors->has('role')) {
+        //         $roleError = $errors->first('role');
+        //     }
+        // }
     }
 
     public function login(Request $request)
     {
         $credentials = $request->only('email', 'password');
-    
+        $device_token = $request->input('deviceToken');
+
         $user = usr::where('email', $request->email)->first();
-    
+
         if (!$user) {
             $response = new ResponseMsg(400, 'Login failed, account not exist', null);
             return response()->json($response);
         }
-    
+
         if (Hash::check($request->password, $user->password)) {
             try {
                 $token = JWTAuth::attempt($credentials);
@@ -130,11 +130,16 @@ class AuthController extends Controller
 
                 $refreshToken = Str::random(32);
                 $expiredRefreshTokenTime = now()->addDays(2);
+                // $expiredRefreshTokenTime = now()->addMinute(1);
                 $user->refresh_token_expired_time = $expiredRefreshTokenTime;
                 $user->refresh_token = $refreshToken;
                 $user->save();
-
-                $response = new ResponseMsg(200, 'Login success', ['token' => $token, 'refreshToken' => $refreshToken]);
+                $data = [
+                    'user_id' => $user->user_id,
+                    'device_token' => $device_token
+                ];
+                $res = $this->sendHttpRequest(env('SERVICE_USER_URL') . '/updateDevice_Token', 'post', $data);
+                $response = new ResponseMsg(200, 'Login success', ['token' => $token, 'refreshToken' => $refreshToken, 'userId' => $user->user_id]);
                 return response()->json($response);
             } catch (JWTException $e) {
                 $response = new ResponseMsg(400, 'Login failed, can not create user accesstoken, please try again latter', null);
@@ -146,7 +151,8 @@ class AuthController extends Controller
         }
     }
 
-    public function genRandomStr($len) {
+    public function genRandomStr($len)
+    {
         $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
         $charLen = strlen($characters);
         $randomStr = '';
@@ -156,12 +162,13 @@ class AuthController extends Controller
         return $randomStr;
     }
 
-    public function registResetPassword(Request $request){
+    public function registResetPassword(Request $request)
+    {
         $email = $request->input('email');
         $user = usr::where('email', $email)->first();
-        if($user){
+        if ($user) {
             $resetPswStr = $this->genRandomStr(12);
-            try{
+            try {
                 $user->update(['reset_password_str' => $resetPswStr]);
                 $data = [
                     "to" => $user->email,
@@ -173,9 +180,8 @@ class AuthController extends Controller
                     ],
                     "template" => "reset_password"
                 ];
-                $res2 = $this->sendHttpRequest(env('SERVICE_NOTI_SENDMAIL_URL'),'post',$data);
-            }
-            catch (\Illuminate\Database\QueryException $e){
+                $res2 = $this->sendHttpRequest(env('SERVICE_NOTI_SENDMAIL_URL'), 'post', $data);
+            } catch (\Illuminate\Database\QueryException $e) {
                 $response = new ResponseMsg(200, 'aaa', $user);
                 return response()->json($response);
             }
@@ -186,13 +192,15 @@ class AuthController extends Controller
         return response()->json($response);
     }
 
-    public function registActivateEmail($user){
+    public function registActivateEmail($user)
+    {
         $activateStr = $this->genRandomStr(16);
         $user->update(['validate_email_str' => $activateStr]);
         return true;
     }
 
-    public function activateAccount(Request $request){
+    public function activateAccount(Request $request)
+    {
         // $request->validate([
         //     'email' => 'required|string|email',
         //     'activateStr' => 'required|string',
@@ -201,12 +209,14 @@ class AuthController extends Controller
         $email = $request->query('email');
         $activateStr = $request->query('activate');
         $user = usr::where('email', $email)
-        ->where('validate_email_str', $activateStr)
-        ->first();
+            ->where('validate_email_str', $activateStr)
+            ->first();
 
-        if($user){
-            $user->update(['validate_email_str' => null,
-                           'is_validate' => true]);
+        if ($user) {
+            $user->update([
+                'validate_email_str' => null,
+                'is_validate' => true
+            ]);
             $response = new ResponseMsg(200, 'Validate email success', null);
             return response()->json($response);
         }
@@ -214,7 +224,8 @@ class AuthController extends Controller
         return response()->json($response);
     }
 
-    public function resetPassword(Request $request){
+    public function resetPassword(Request $request)
+    {
         $request->validate([
             'email' => 'required|string|email',
             'resetPasswordStr' => 'required|string',
@@ -261,12 +272,13 @@ class AuthController extends Controller
         return response()->json($response);
     }
 
-    public function getTokenPayload(Request $request){
+    public function getTokenPayload(Request $request)
+    {
         $accessToken = $request->header('Authorization');
-        try{
+        try {
             // $payload = JWTAuth::setToken($accessToken)->getPayload();
             // $expirationTime = $payload->getClaim('exp');
-                        
+
             //https://stackoverflow.com/questions/52108465/how-to-parse-the-jwt-token-from-controller-jwtmanager-decodejwt-using-pure
             // $tokenParts = explode(".", $accessToken);  
             // $tokenHeader = base64_decode($tokenParts[0]);
@@ -288,17 +300,19 @@ class AuthController extends Controller
             return response()->json($response);
         }
     }
-    
-    public function getUserRole(Request $request){
+
+    public function getUserRole(Request $request)
+    {
         $user = $request->user();
         $response = new ResponseMsg(200, 'Get user role success', ['role' => $user->role]);
         return response()->json($response);
     }
 
-    public function checkUserInRole(Request $request){
+    public function checkUserInRole(Request $request)
+    {
         $user = $request->user();
         $role = strtolower($request->query('role'));
-        $response = new ResponseMsg(200, $user->role == $role? 'Yes':'No', null);
+        $response = new ResponseMsg(200, $user->role == $role ? 'Yes' : 'No', null);
         return response()->json($response);
     }
 
@@ -306,18 +320,55 @@ class AuthController extends Controller
     {
         $accessToken = $request->header('Authorization');
         // $token = substr($accessToken, 7, strlen($accessToken)); 
-        
+
         try {
             $user = JWTAuth::setToken($accessToken)->authenticate();
             // JWTAuth::invalidate(JWTAuth::getToken());
             $user->refresh_token_expired_time = null;
             $user->refresh_token = '';
             $user->save();
+            $data = [
+                'user_id' => $user->user_id,
+                'device_token' => ''
+            ];
+            $res = $this->sendHttpRequest(env('SERVICE_USER_URL') . '/updateDevice_Token', 'post', $data);
             $response = new ResponseMsg(200, 'Logout successful', null);
             return response()->json($response);
         } catch (JWTException $e) {
             $response = new ResponseMsg(200, 'Failed to logout, you may logged out already', null);
             return response()->json($response);
         }
+    }
+
+    public function reGenAccessToken(Request $request){
+        $accessToken = $request->input('accessToken');
+        $refreshToken = $request->input('refreshToken');
+
+        $user = usr::where('refresh_token', $refreshToken)->first();
+        if($user){
+            if($user->refresh_token_expired_time <= Carbon::now()){
+                $response = new ResponseMsg(400, 'Your refresh token is out of date, please login again', null);
+                return response()->json($response);
+            }
+            else{
+                $token = JWTAuth::fromUser($user);
+                if (!$token) {
+                    $response = new ResponseMsg(400, 'Create token failed', null);
+                    return response()->json($response);
+                }
+                $refreshToken = Str::random(32);
+                $expiredRefreshTokenTime = now()->addDays(2);
+                $user->refresh_token_expired_time = $expiredRefreshTokenTime;
+                $user->refresh_token = $refreshToken;
+                $user->save();
+                $response = new ResponseMsg(200, 'Regenerate token success', ['token' => $token, 'refreshToken' => $refreshToken]);
+                return response()->json($response);
+            }
+        }
+        else{
+            $response = new ResponseMsg(400, 'Invalid refresh token, please login again', null);
+            return response()->json($response);
+        }
+
     }
 }
