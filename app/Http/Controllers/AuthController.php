@@ -312,8 +312,15 @@ class AuthController extends Controller
     {
         $user = $request->user();
         $role = strtolower($request->query('role'));
-        $response = new ResponseMsg(200, $user->role == $role ? 'Yes' : 'No', null);
-        return response()->json($response);
+        if($user->role == $role){
+            $response = new ResponseMsg(200, '', null);
+            return response()->json($response);
+        }
+        else{
+            $response = new ResponseMsg(403, '', null);
+            return response()->json($response);
+        }
+        return response()->json('Error');
     }
 
     public function logout(Request $request)
