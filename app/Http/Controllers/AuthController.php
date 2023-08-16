@@ -40,7 +40,9 @@ class AuthController extends Controller
         ]);
 
         if ($validator->fails()) {
-            $response = new ResponseMsg(400, $validator->errors(), null);
+            $errors = $validator->errors()->getMessageBag();
+            $errorMessage = $errors->first(); // Lấy thông báo lỗi đầu tiên
+            $response = new ResponseMsg(400, $errorMessage, null);
             return response()->json($response);
         }
 
@@ -112,8 +114,14 @@ class AuthController extends Controller
     {
         $credentials = $request->only('email', 'password');
         $device_token = $request->input('deviceToken');
-
-        $user = usr::where('email', $request->email)->first();
+        $role = $request->input('role');
+        $user = null;
+        if($role == 'admin'){
+            $user = usr::where('email', $request->email)->where('role', $request->role)->first();
+        }
+        else{
+            $user = usr::where('email', $request->email)->first();
+        }
 
         if (!$user) {
             $response = new ResponseMsg(400, 'Login failed, account not exist', null);
@@ -134,7 +142,7 @@ class AuthController extends Controller
                 $user->refresh_token_expired_time = $expiredRefreshTokenTime;
                 $user->refresh_token = $refreshToken;
                 $user->save();
-                $data = [
+                $data = [   
                     'user_id' => $user->user_id,
                     'device_token' => $device_token
                 ];
