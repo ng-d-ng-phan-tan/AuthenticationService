@@ -355,6 +355,18 @@ class AuthController extends Controller
         }
     }
 
+    public function authenticateUser(Request $request){
+        $user = $request->user();
+        $response = null;
+        if($user != null){
+            $response = new ResponseMsg(200, 'This user is valid', null);
+        }
+        else{
+            $response = new ResponseMsg(400, 'User is not valid', null);
+        }
+        return response()->json($response);
+    }
+
     public function reGenAccessToken(Request $request){
         $accessToken = $request->input('accessToken');
         $refreshToken = $request->input('refreshToken');

@@ -32,6 +32,7 @@ Route::get('/getTokenPayload', [AuthController::class, 'getTokenPayload']);
 Route::middleware('jwt.verify')->group(function () {
     Route::get('/getUserRole', [AuthController::class, 'getUserRole']);
     Route::get('/checkUserInRole', [AuthController::class, 'checkUserInRole']);
+    Route::get('/authenticateUser', [AuthController::class, 'authenticateUser']);
 });
 // Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 //     return $request->user();
