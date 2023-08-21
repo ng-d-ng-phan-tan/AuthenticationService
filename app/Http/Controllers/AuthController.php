@@ -55,7 +55,7 @@ class AuthController extends Controller
         ]);
 
         if ($user->save()) {
-            $res = $this->sendHttpRequest(env('SERVICE_USER_URL') . '/add', 'post', $user);
+            $res = $this->sendHttpRequest(env('SERVICE_USER_URL') . '/register', 'post', $user);
             $status = $res->status;
             if ($status == '201') {
                 $rdStr = $this->genRandomStr(18);
