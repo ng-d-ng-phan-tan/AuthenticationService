@@ -64,7 +64,7 @@ class AuthController extends Controller
                     "to" => $user->email,
                     "subject" => "Activate Account",
                     "data" => [
-                        "link" => "http://localhost:4200/auth/activate?email={$user->email}&activate={$rdStr}",
+                        "link" => env('BASE_URL_AUTH_FE') . "/auth/activate?email={$user->email}&activate={$rdStr}",
                         "useremail" => $user->email
                     ],
                     "template" => "activate_account"
