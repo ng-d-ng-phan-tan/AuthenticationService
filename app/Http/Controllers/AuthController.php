@@ -128,6 +128,11 @@ class AuthController extends Controller
             return response()->json($response);
         }
 
+        if($user->is_validate == false){
+            $response = new ResponseMsg(400, 'Login failed, your account email is not validated', null);
+            return response()->json($response);
+        }
+
         if (Hash::check($request->password, $user->password)) {
             try {
                 $token = JWTAuth::attempt($credentials);
@@ -135,7 +140,15 @@ class AuthController extends Controller
                     $response = new ResponseMsg(400, 'Login failed, account not exist', null);
                     return response()->json($response);
                 }
-
+                $dataGetUser = [
+                    'user_id' => $user->user_id
+                ];
+                $resUserObj = $this->sendHttpRequest(env('SERVICE_USER_URL') . '/getUser', 'post', $dataGetUser);
+                $delete_at = $resUserObj->data[0]->delete_at;
+                if($delete_at != null){
+                    $response = new ResponseMsg(400, 'Login failed, your account had been deleted by admin', null);
+                    return response()->json($response);
+                }
                 $refreshToken = Str::random(32);
                 $expiredRefreshTokenTime = now()->addDays(2);
                 // $expiredRefreshTokenTime = now()->addMinute(1);
