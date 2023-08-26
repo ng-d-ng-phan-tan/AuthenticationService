@@ -15,7 +15,6 @@ use App\Http\Controllers\AuthController;
 |
 */
 
-
 Route::get('/test', function () {
     return "Auth OK";
 });
@@ -36,4 +35,7 @@ Route::middleware('jwt.verify')->group(function () {
 });
 // Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 //     return $request->user();
+// });
+
+// Route::middleware(['cors'])->group(function () {
 // });
